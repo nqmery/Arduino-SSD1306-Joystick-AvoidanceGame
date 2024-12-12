@@ -30,12 +30,13 @@ unsigned long sframe;        // フレーム管理時計の時刻 schaduledなfl
 unsigned long frameCounter; // アニメーション用のフレーム数カウンター
 
 //=====スコア関連===========
-uint16_t score = 0;
-uint16_t bestScore = 0;
+uint32_t score = 0;
+uint32_t bestScore = 0;
 
 // スコアを加算する関数
-void addScore(int value)
+void addScore(int8_t value)
 {
+  if(score < 4294967295 - value) //オーバーフロー対策
   score += value;
 }
 //=========================
@@ -77,7 +78,7 @@ private:
 
         if (gameState == inGameNow)
         { // ゲーム中にのみスコア加算
-          addScore(10);
+          addScore(1);
         }
       }
     }
