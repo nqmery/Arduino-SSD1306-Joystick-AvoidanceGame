@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <EEPROM.h>
 
-// Adafruit_SSD1306 display型変数の宣言
+// Adafruit_SSD1306 displayクラスのインスタンス化
 #define SCREEN_WIDTH 128    // OLED display width, in pixels
 #define SCREEN_HEIGHT 64    // OLED display height, in pixels
 #define OLED_RESET -1       // Reset pin # (or -1 if sharing Arduino reset pin)
