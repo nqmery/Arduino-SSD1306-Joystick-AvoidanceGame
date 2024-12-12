@@ -2,7 +2,6 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <stdio.h>
-// #include <new.h> //new,deleteのライブラリ
 
 // Adafruit_SSD1306 display型変数の宣言
 #define SCREEN_WIDTH 128    // OLED display width, in pixels
@@ -11,62 +10,67 @@
 #define SCREEN_ADDRESS 0x3C //< See datasheet for Address; 0x3C for 128x32
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-#define pinX A0
-#define pinY A1
+#define pinX A0                          // スティックのX軸信号の入力ピンを指定
+#define pinY A1                          // スティックのY軸信号の入力ピンを指定
+int stickX, stickY;                      // スティックの信号の生の値を格納する変数
+int8_t xStickState = 0, yStickState = 0; //-2のとき負方向大、-1のとき負方向小、0のとき中心、1のとき正方向小、2のとき正方向大
 
-#define DefaultCursorY 9
+#define DefaultCursorY 9 // 画面上のゲーム領域の上端のY座標()
 
-#define MaxBullets 16 // 弾の最大生成数
-#define DefaultHealth 3
+//========設定========
+#define MaxBullets 16  // 弾の最大生成数
+#define MaxHealth 3    // 最大体力
+#define scoreketasuu 5 // スコア表示の桁数(オーバーすると後ろに被る)
 
-// 周期処理のタイマー初期設定　////////////////////////////////////////////https://qiita.com/Ninagawa123/items/f8585c5c711bcf065656
+// 周期処理のタイマー初期設定 (参考: https://qiita.com/Ninagawa123/items/f8585c5c711bcf065656)
 // https://qiita.com/Ninagawa123/items/f8585c5c711bcf065656
 const uint8_t frame_ms = 50; // 1フレームあたりの単位時間(ms)
 unsigned long sframe;        // フレーム管理時計の時刻 schaduledなflame数
-unsigned long frameCounter;
 
-int stickX, stickY;
+unsigned long frameCounter; // アニメーション用のフレーム数カウンター
+
+//=====スコア関連===========
 uint16_t score = 0;
-// スコア加算
+uint16_t bestScore = 0;
+
+// スコアを加算する関数
 void addScore(int value)
 {
   score += value;
 }
+//=========================
 
-uint16_t bestScore = 0;
-
-// bool inGameNow = true;
-// bool inGameStartFlag = false;
-
+//===ゲームの状態状態関連===
 #define inTitle 0
 #define inGameStart 1
 #define inGameNow 2
 #define inGameEnd 3
 #define inResult 4
 
-uint8_t gameState = inTitle;
+uint8_t gameState = inTitle; // 起動時のGameStateを指定
+//=========================
 
-int8_t xStickState = 0, yStickState = 0; //-2のとき負方向大、-1のとき負方向小、0のとき中心、1のとき正方向小、2のとき正方向大
-
-// uint8_t pixelsBuffer[128][54] = {{0}}; //画素のバッファ
-
+// 弾関連の変数・クラスなど
 uint8_t bulletNumber = 0; // 弾番号のメモリを確保
 
 // 弾のクラス
 class BulletClass
 {
 private:
+  // 座標の変数宣言
   int8_t posX;
-  float posY;
+  float posY; // Y方向は遅く動かすのでfloat型に
+  // 弾の移動速度の変数宣言
   int8_t speedX;
   int8_t speedY;
 
+  // 弾を動かす関数
   void move()
-  { // 弾を動かす関数
-    if (isActive)
+  {
+    if (isActive) // 弾が有効なとき
     {
-      posX = posX - speedX;                    // x座標
-      posY = posY + ((float)(speedY) / 100.0); // y座標
+      posX = posX - speedX;                    // x座標の移動
+      posY = posY + ((float)(speedY) / 100.0); // y座標の移動(floatで計算)
       if (posX < 0 || posY < 0 || posY > 54)
       {
         isActive = false; // 画面の範囲外に出たら弾を無効に
@@ -78,71 +82,97 @@ private:
       }
     }
   }
+
+  // 弾の描画処理
   void write()
   {
-    // if(!pixelsBuffer[(uint8_t)posX][(uint8_t)posY]){
-    //   pixelsBuffer[(uint8_t)posX][(uint8_t)posY] += 1;
-    // }
-
     display.drawPixel(posX, posY + DefaultCursorY, WHITE); // ディスプレイバッファに書き込み
   }
 
 public:
   bool isActive = false; // 表示されている弾かどうか
-  void activateBullet()
-  { // 弾の有効化
-    posX = 127;
-    posY = (float)random(5, 50);
-    speedX = random(2, 4);
-    speedY = (int8_t)random(-50, 50);
-    isActive = true;
-  }
+
+  // 毎フレーム行う処理
   void update()
-  { // 弾の処理
+  {
     if (isActive == true)
-    { // 弾が有効のときのみ処理
+    {
+      // 弾が有効のときのみ実行
       move();
       write();
     }
   }
+
+  // 弾の有効化時の処理
+  void activateBullet()
+  {
+    // 生成時の座標を指定
+    posX = 127; // 画面右端に生成
+    posY = (float)random(5, 50);
+    // 弾の速度を指定
+    speedX = random(2, 4);
+    speedY = (int8_t)random(-50, 50);
+    isActive = true; // 弾を有効に
+  }
+
+  //(当たり判定用)
   int8_t returnPosX()
-  { // 弾のx座標を返す
-    return posX;
+  {
+    return posX; // 弾のx座標を返す
   }
   int8_t returnPosY()
-  {                      // 弾のy座標を返す
-    return (int8_t)posY; // 整数型にキャスト
+  {
+    // 弾のy座標を整数型にキャストして返す
+    return (int8_t)posY;
   }
 };
 
-// 弾の生成
+// 弾のインスタンス化(メモリ確保のため)
 BulletClass bullet[MaxBullets];
+// 最大弾数分のメモリをコンピュータ起動時に確保する
 
+//===========================================
+
+// プレイヤー関連=============================
 class PlayerClass
 {
 private:
+  // 座標
   int8_t posX;
   int8_t posY;
-  uint8_t onDamagedCounter = 0;
-  bool isVisible = false; // 描画するかどうか
+
+  uint8_t onDamagedCounter = 0; // ダメージを受けた後の無敵時間+アニメーション用のカウンター
+
+  bool isVisible = false; // プレイヤースプライトを表示するかどうか
 
 public:
-  int8_t health; // 体力
+  int8_t health; // プレイヤー体力
+
+  // ゲーム開始時の処理
   void start()
-  { // プレイヤー座標と体力初期化
+  {
+    // プレイヤー座標と体力初期化
     posX = 8;
     posY = 27;
-    health = DefaultHealth;
-    isVisible = true;
+    health = MaxHealth;
+
+    isVisible = true; // プレイヤーを表示
   }
+
+  // プレイヤーの移動処理
   void move()
-  { // プレイヤーを動かす
-    posX = posX + xStickState;
+  {
+    // x座標
+    posX = posX + xStickState; // StickStateの値分(2か1)移動
+    // 画面外に出ようとしたとき、座標を戻す
     if (posX < 2 || posX > 124)
-    { // 画面外に出ないように座標を戻す
+    {
       posX = posX - xStickState;
     }
-    posY = posY - yStickState; // ディスプレイはy軸正方向が下向きなのでマイナスの入力を正に変換
+
+    // y座標
+    posY = posY - yStickState; // ディスプレイはy軸正方向が下向きなため、マイナスの入力を正に変換して計算
+    // 画面外に出ようとしたとき座標を戻す
     if (posY < 1 || posY > 53)
     {
       posY = posY + yStickState;
@@ -152,27 +182,34 @@ public:
   // 当たり判定
   void hit()
   {
+    // すべての弾に対して検索
     for (uint8_t cnt = 0; cnt < MaxBullets; cnt++)
-    { // すべての弾に対して検索
-      // 自機スプライトの範囲に弾がいるとき
+    {
+      // 自機スプライトの範囲(posX±2,posY±1)に弾がいるとき
       if (posX - 2 <= bullet[cnt].returnPosX() && bullet[cnt].returnPosX() <= posX + 2 && posY - 1 <= bullet[cnt].returnPosY() && bullet[cnt].returnPosY() <= posY + 1)
       {
-        bullet[cnt].isActive = false;
+        bullet[cnt].isActive = false; // 当たり判定に引っかかった弾を消す
+
+        // ダメージを受けてから一定フレーム経っているとき
         if (onDamagedCounter == 0)
-        { // ダメージを受けてから一定フレーム経っているとき
-          health--;
+        {
+          health--;              // 体力を1減らす
           onDamagedCounter = 40; // 指定フレーム数が経過するまでダメージを受けない
+
+          // 体力が0になったとき
           if (health == 0)
           {
-            onDamagedCounter = 60;
-            gameState = inGameEnd;
+            onDamagedCounter = 60; // 終了時アニメーション用にカウンターを60に
+            gameState = inGameEnd; // ゲームの終了処理へ
           }
         }
       }
     }
   }
+
+  // ダメージ時のアニメーション処理
   void damageAnimator()
-  { // ダメージ時のアニメーション
+  {
     if (onDamagedCounter > 18)
     {
       if (((onDamagedCounter + 2) % 6) == 0)
@@ -185,45 +222,56 @@ public:
       }
     }
   }
+
+  // 描画処理
+  void write()
+  {
+    // 表示が有効のとき
+    if (isVisible == true)
+    {
+      // 自機のグラフィックを左上から順にドット打ち
+      display.drawPixel(posX - 2, posY + 1 + DefaultCursorY, WHITE);
+      display.drawPixel(posX - 2, posY + DefaultCursorY, WHITE);
+      display.drawPixel(posX - 2, posY - 1 + DefaultCursorY, WHITE);
+      display.drawPixel(posX - 1, posY + 1 + DefaultCursorY, WHITE);
+      display.drawPixel(posX - 1, posY - 1 + DefaultCursorY, WHITE);
+      display.drawPixel(posX, posY + 1 + DefaultCursorY, WHITE);
+      display.drawPixel(posX, posY - 1 + DefaultCursorY, WHITE);
+      display.drawPixel(posX + 1, posY + 1 + DefaultCursorY, WHITE);
+      display.drawPixel(posX + 1, posY - 1 + DefaultCursorY, WHITE);
+      display.drawPixel(posX + 2, posY + DefaultCursorY, WHITE);
+    }
+  }
+
+  // 毎フレーム行う処理
   void update()
   {
     move();
     hit();
     damageAnimator();
+
+    // ダメージを受けてからカウンタが0になるまで
     if (onDamagedCounter > 0)
     {
-      onDamagedCounter--;
+      onDamagedCounter--; // カウンタをデクリメント
     }
+
     write();
-    // display.setCursor(0,56);
-    // display.print(isVisible);デバッグ用
   }
-  void write()
-  {
-    if (isVisible == true)
-    { // 描画が有効のとき
-      // 自機のグラフィックを左上から順にドット打ち
-      display.drawPixel(posX - 2, posY + 1 + DefaultCursorY, WHITE); // ディスプレイバッファに書き込み
-      display.drawPixel(posX - 2, posY + DefaultCursorY, WHITE);     // ディスプレイバッファに書き込み
-      display.drawPixel(posX - 2, posY - 1 + DefaultCursorY, WHITE); // ディスプレイバッファに書き込み
-      display.drawPixel(posX - 1, posY + 1 + DefaultCursorY, WHITE); // ディスプレイバッファに書き込み
-      display.drawPixel(posX - 1, posY - 1 + DefaultCursorY, WHITE); // ディスプレイバッファに書き込み
-      display.drawPixel(posX, posY + 1 + DefaultCursorY, WHITE);     // ディスプレイバッファに書き込み
-      display.drawPixel(posX, posY - 1 + DefaultCursorY, WHITE);     // ディスプレイバッファに書き込み
-      display.drawPixel(posX + 1, posY + 1 + DefaultCursorY, WHITE); // ディスプレイバッファに書き込み
-      display.drawPixel(posX + 1, posY - 1 + DefaultCursorY, WHITE); // ディスプレイバッファに書き込み
-      display.drawPixel(posX + 2, posY + DefaultCursorY, WHITE);     // ディスプレイバッファに書き込み
-    }
-  }
+
+  // ゲームオーバー時のアニメーションを1ピクセル描画
   void particle(int x, int y)
-  { // 終了時アニメーション
+  {
     if ((x < 0 || x > 125 || y < 0 || y > 54) == false)
     {
-      display.drawPixel(x, y + DefaultCursorY, WHITE);
+      display.drawPixel(x, y + DefaultCursorY, WHITE); // バッファに書き込み
     }
   }
+  // ゲームオーバー時のアニメーション
+  //  gameStateがisGameEndのときに呼び出される
   void endAnimator()
-  { // healthが0になったとき
+  {
+    // パーティクルの拡散の描画と点滅
     if (onDamagedCounter % 3 || onDamagedCounter % 4)
     {
       particle((int)posX + 2 * (60 - onDamagedCounter), (int)posY);
@@ -235,6 +283,8 @@ public:
       particle((int)((float)posX - 1.41 * (60 - onDamagedCounter)), (int)((float)posY + 1.41 * (60 - onDamagedCounter)));
       particle((int)((float)posX - 1.41 * (60 - onDamagedCounter)), (int)((float)posY - 1.41 * (60 - onDamagedCounter)));
     }
+
+    // 画面全体を点滅させる
     if (onDamagedCounter == 57 || onDamagedCounter == 53)
     {
       display.invertDisplay(false);
@@ -243,11 +293,17 @@ public:
     {
       display.invertDisplay(true);
     }
+
+    // アニメーションが始まってからの経過時間のカウンタをデクリメント
     onDamagedCounter--;
+
+    // カウンタがになったときに1度だけ走らせる処理
     if (onDamagedCounter == 0)
     {
-      gameState = inResult;
-      frameCounter = 20;
+      gameState = inResult; // リザルト画面に移行
+      frameCounter = 20;    // リザルト画面で1秒待つためのカウンタ
+
+      // スコアが現在のベストコアより高ければベストスコアを更新
       if (score > bestScore)
       {
         bestScore = score;
@@ -256,9 +312,10 @@ public:
   }
 };
 
+// プレイヤーをインスタンス化(メモリの確保が目的)
 PlayerClass player;
 
-// タイトル/リザルト画面の背景
+// タイトル/リザルト画面の背景ビットマップ
 //  'background', 128x64px
 const unsigned char titlebgbackground[] PROGMEM = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -340,102 +397,175 @@ void setup()
   // 乱数のシード設定
   randomSeed(500);
   sframe = millis(); // 現在時刻を取得
-  frameCounter = 20;
+  frameCounter = 20; // タイトル画面で1秒待つためのカウンタ
 }
 
 void loop()
 {
 
   display.clearDisplay(); // ディスプレイのバッファを初期化
-  getStickStateXY();
+  getStickStateXY();      // スティックの状態を取得
 
+  // gameStateの値によって処理を分岐
   switch (gameState)
   {
-  case inGameStart:
-    gameStartProcess();
+  case inGameStart:     // ゲーム開始時
+    gameStartProcess(); // ゲームの開始処理
     break;
-  case inGameNow:
-    inGameProcess();
-    inGameScoreBoard();
+  case inGameNow:       // ゲーム中
+    inGameProcess();    // ゲームの処理
+    inGameScoreBoard(); // スコアボードの表示
     break;
-  case inGameEnd:
-    endGameProcess();
-    inGameScoreBoard();
+  case inGameEnd:       // ゲーム終了からリザルト画面まで
+    endGameProcess();   // ゲームの終了処理
+    inGameScoreBoard(); // スコアボードの表示
     break;
-  case inResult:
+  case inResult: // リザルト画面
     resultScreen();
     break;
 
-  default: // title
+  default: // タイトル画面
     titleScreen();
     break;
   }
-  // display.display();
-  FrameTimer();
-  display.display();
+
+  FrameTimer();      // 1フレーム分の時間が経過していなければこの関数内で処理が止まる
+  display.display(); // バッファを画面に描画
 }
 
+// ゲーム中の処理
+void inGameProcess()
+{
+  // 表示されていない弾があったら初期化ののち表示する
+  generateBullets();
+
+  // 弾の毎フレーム行う処理をすべての弾で実行
+  for (uint8_t cnt = 0; cnt < MaxBullets; cnt++)
+  {
+    bullet[cnt].update();
+  }
+  // プレイヤーの毎フレーム行う処理を実行
+  player.update();
+}
+
+// ゲーム開始時の処理 (開始時に1回だけ走る)
+void gameStartProcess()
+{
+  score = 0;             // スコア初期化
+  player.start();        // プレイヤーの開始処理を実行
+  gameState = inGameNow; // ゲームの状態をゲーム中に変更
+}
+
+// ゲーム終了時の処理
+void endGameProcess()
+{
+  // 表示中の弾はゲーム中と同様に動かし続ける
+  for (uint8_t cnt = 0; cnt < MaxBullets; cnt++)
+  {
+    bullet[cnt].update();
+  }
+
+  player.endAnimator(); // プレイヤーの終了アニメーションを実行
+}
+
+// スコアボード表示の処理
+void inGameScoreBoard()
+{
+  display.setTextSize(1);                                            // テキストの大きさ
+  display.setTextColor(SSD1306_WHITE);                               // テキストの色
+  display.setCursor(8, 0);                                           // テキストの位置
+  display.println("SCORE:");                                         // テキストをバッファに書き込み
+  display.setCursor(42 + (6 * scoreketasuu) - (6 * keta(score)), 0); // 5桁ぶんの領域を確保し、スコアを右揃えに
+  display.print(score);                                              // スコア表示をバッファに書き込み
+  display.setCursor(42 + (6 * scoreketasuu) + 8, 0);                 // カーソル移動
+  display.print("HEALTH:");                                          // テキストをバッファに書き込み
+  display.print((int)player.health);                                 // 体力表示
+  display.drawLine(0, 8, 128, 8, WHITE);                             // スコアボードとゲーム領域の境界線をバッファに書き込み
+}
+
+// タイトル画面の処理
 void titleScreen()
 {
+  // 背景の表示
   display.drawBitmap(0, 0, titlebgbackground, (uint8_t)SCREEN_WIDTH, (int16_t)SCREEN_HEIGHT, WHITE);
+
+  // ベストスコアの表示
   display.setCursor(4, 28);
   display.setTextColor(SSD1306_WHITE);
   display.setTextSize(1);
   display.print("BESTSCORE");
   display.setCursor(15, 40);
   display.print(bestScore);
-  display.setCursor(10, 52);
-  display.print("-> PLAY");
+
   if (frameCounter > 0)
   {
-    frameCounter--;
+    frameCounter--; // タイトル画面の表示からプレイボタンの表示まで1秒待つためのカウンタ
   }
   else if (xStickState > 1)
   {
+    // タイトルボタンが選択されたときの処理
+    display.setCursor(10, 52);
+    display.print("-> PLAY"); // バッファに書き込み
     display.fillRect(8, 50, 46, 12, INVERSE);
     display.display();
-    delay(1000);
+    delay(1000); // 1秒待つ
     gameState = inGameStart;
+  }
+  else
+  {
+    // プレイボタンの描画(frameCounterが0になってから)
+    display.setCursor(10, 52);
+    display.print("-> PLAY"); // バッファに書き込み
   }
 }
 
+// リザルト画面の処理
 void resultScreen()
 {
+  // 背景の表示
   display.drawBitmap(0, 0, titlebgbackground, (uint8_t)SCREEN_WIDTH, (int16_t)SCREEN_HEIGHT, WHITE);
+
+  // GAME OVER! のテキストとスコアを表示
   display.setTextSize(1);
   display.setCursor(4, 28);
   display.print("GAME OVER!");
   display.setCursor(4, 40);
   display.print(score);
-  display.setCursor(10, 52);
-  display.print("-> TITLE");
+
   if (frameCounter > 0)
   {
-    frameCounter--;
+    frameCounter--; // リザルト画面が表示されてから操作可能になるまでのカウンタ
   }
   else if (xStickState > 1)
   {
+    // タイトル画面へ遷移するボタンが押されたときの処理
+    display.setCursor(10, 52);
+    display.print("-> TITLE");
     display.fillRect(8, 50, 52, 12, INVERSE);
     display.display();
     delay(1000);
     gameState = inTitle;
     frameCounter = 20;
   }
+  else
+  {
+    // プレイボタンの表示(1秒経ってから)
+    display.setCursor(10, 52);
+    display.print("-> TITLE");
+  }
 }
 
+// void loop()の処理が終わったとき、1フレーム分の時間が経過するまでこの関数内で処理が止まる
 void FrameTimer()
 {                                // 周期処理用に処理を遅延させるメソッド
   unsigned long curr = millis(); // 現在時刻を取得
   if (curr - sframe > frame_ms)
-  { // 現在時刻がフレーム管理時計を超えていたら何らかのアラートを出す
-    // この例では処理落ち表示
-    // display.setCursor(0,56);
-    // display.print("SHORIOCHI");
+  {
     sframe = millis(); // 現在時刻を取得
   }
   else
   {
-    // 余剰時間を消化する処理。時間がオーバーしていたらこの処理を自然と飛ばす。
+    // 余剰時間を消化する処理。時間がオーバーしていたらこの処理は飛ばされる。
     while (curr - sframe < frame_ms)
     {
       curr = millis();
@@ -443,139 +573,35 @@ void FrameTimer()
     sframe = curr;
   }
 }
-/*テスト用loop関数
-void loop(){
-  getStickStateXY();
-  display.clearDisplay(); // ディスプレイのバッファを初期化
-  display.setTextSize(1); // テキストサイズ1(6x8), 2(12x16)
-  display.setTextColor(SSD1306_WHITE); // テキストの色
-  display.setCursor(0, 0); // カーソルの位置（X=0, Y=0）
-  display.print("X"); // 文字を描画
-  display.print(stickX); // 文字を描画
-  display.println(xStickState);
-  display.print("Y"); // 文字を描画
-  display.print(stickY); // 文字を描画
-  display.println(yStickState);
 
-  display.drawLine(0, 10, 128, 10, WHITE); // 線を描画
-  display.print(gameState);
-  display.display(); // ディスプレイのバッファを表示
-}*/
-
-// スティックの状態を取得
+// スティックの状態を取得して変数に代入する処理
 void getStickStateXY()
 {
-  // 生の値
-  stickX = -1 * analogRead(pinX) + 512;
-  stickY = analogRead(pinY) - 512;
-  // 5段階評価
+  // アナログスティックの電圧の読み取り値を取得して、調整して代入
+  stickX = -1 * analogRead(pinX) + 512; // 右方向に-512～511の範囲で動くように調整
+  stickY = analogRead(pinY) - 512;      // 右方向に-512～511の範囲で動くように調整
+  // スティックの状態を(-2,-1,0,1,2)の5種類に分けて格納
   xStickState = getStickState(stickX);
   yStickState = getStickState(stickY);
 }
 
-// スティックの状態の5段階評価の関数
+// // スティックの状態を(-2,-1,0,1,2)の5種類に分けて格納する関数
 int8_t getStickState(int value)
 {
   int8_t tmpState = 0; // 中心付近のとき0
   if (abs(value) > 430)
   {
-    tmpState = 2; // 値が大きいとき2
+    tmpState = 2; // 絶対値が大きいとき2
   }
   else if (abs(value) > 120)
   {
-    tmpState = 1; // 値が小さいと1
+    tmpState = 1; // 絶対値が小さいと1
   }
   if (value < 0)
   { // 値が負のときマイナスに
     tmpState = tmpState * -1;
   }
-  return tmpState;
-}
-
-// ゲームの処理
-void inGameProcess()
-{
-  // clearBuffers(pixelsBuffer);
-  generateBullets();
-
-  // display.setCursor(0, DefaultCursorY); // カーソルの位置（X=10, Y=0）
-  // 弾の処理
-  for (uint8_t cnt = 0; cnt < MaxBullets; cnt++)
-  {
-    bullet[cnt].update();
-  }
-  player.update();
-}
-
-// ゲーム開始時の処理
-void gameStartProcess()
-{
-  score = 0;
-  player.start();
-  gameState = inGameNow;
-}
-
-void endGameProcess()
-{
-  for (uint8_t cnt = 0; cnt < MaxBullets; cnt++)
-  {
-    bullet[cnt].update();
-  }
-  player.endAnimator();
-}
-
-// TextSize(1)…縦8,横6 bit
-// スコア表示の処理
-void inGameScoreBoard()
-{
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE); // テキストの色
-#define scoreketasuu 5
-  display.setCursor(8, 0);
-  display.println("SCORE:");
-  display.setCursor(42 + (6 * scoreketasuu) - (6 * keta(score)), 0); // 5桁ぶんの領域を確保し、スコアを右揃えに
-  display.print(score);                                              // スコア表示
-  display.setCursor(42 + (6 * scoreketasuu) + 8, 0);                 // カーソル移動
-  display.print("HEALTH:");
-  display.print((int)player.health); // 体力表示
-  display.drawLine(0, 8, 128, 8, WHITE);
-}
-
-// スコアの桁数を返す関数
-int8_t keta(uint16_t tmpScore)
-{
-  int8_t cnt = 0; // 桁数カウンタ
-  /*if(tmpScore < 0){ //スコアが0以下のときの処理(使わない)
-    cnt++;
-    tmpScore = -1 * tmpScore;
-  }*/
-  do
-  {
-    cnt++;
-    tmpScore = tmpScore / 10; // tmpScoreが0～9のときtmpScoreが0に
-    if (tmpScore == 0)
-    {
-      return cnt; // 桁数を返す
-    }
-  } while (tmpScore > 0);
-}
-
-// 弾カウンタのリセット
-uint8_t resetBulletNumber(uint8_t value)
-{
-  if (value >= 8)
-  {
-    return 0;
-  }
-}
-
-// スコア表示テスト用関数
-void scoreTest()
-{
-  if (xStickState == 2)
-  {
-    addScore(100);
-  }
+  return tmpState; // 戻り値
 }
 
 // 弾生成
@@ -591,26 +617,23 @@ void generateBullets()
   }
 }
 
-// 表示関連
+// スコアの桁数を返す関数
+int8_t keta(uint16_t tmpScore)
+{
+  int8_t cnt = 0; // 桁数カウンタ
+  /*if(tmpScore < 0){ //スコアが0以下のときの処理(スコアは非負整数のため使わない)
+    cnt++;
+    tmpScore = -1 * tmpScore;
+  }*/
 
-// バッファ配列をクリア
-/*
-void clearBuffers(uint8_t buffer[128][54]){
-  for(uint8_t cnt1 = 0;cnt1 < 128;cnt1++){
-    for(uint8_t cnt2 = 0;cnt2 < 55;cnt2++){
-      buffer[cnt1][cnt2]=0;
+  // 数える
+  do
+  {
+    cnt++;                    // 桁数を加算
+    tmpScore = tmpScore / 10; // tmpScoreが10以上のとき1桁下がる tmpScoreが0～9のときtmpScoreが0になる
+    if (tmpScore == 0)
+    {
+      return cnt; // 桁数を返す
     }
-  }
-}*/
-
-//  stickX = -1 * analogRead(pinX) + 1023;
-//  stickY = analogRead(pinY);
-
-/*
-void titleScreen(){
-
+  } while (tmpScore > 0); // tmpScoreが0になるまでループ
 }
-
-struct bullet{
-
-}*/
