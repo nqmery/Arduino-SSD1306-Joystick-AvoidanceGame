@@ -1,3 +1,32 @@
+/* Avoidance.ino 2024/12/12 ArduinoIDE 2.3.3
+============================================
+Arduino+LCD+アナログスティックで弾避けゲーム
+--------------- A V O I D ------------------
+                                     Name
+============================================
+
+■接続機器
+  出力機器:LCDディスプレイ 128x64ドット (制御IC: SSD1306)
+    SDAピンをArduinoのSDA端子へ
+    SCLピンをArduinoのSCL端子へ
+    VCC端子にArduinoの5V端子から電源を
+    GNDはGNDへ
+  入力機器:2軸アナログスティック
+    X軸方向の2番ピンをArduinoのA0端子へ
+    Y軸方向の2番ピンをArduinoのA1端子へ
+    1番ピンにArduinoの5V端子から電源を
+    GNDはGNDへ
+
+■あそびかた
+  ディスプレイとスティックを接続したら、Arduinoに電源を繋いで起動
+  タイトル画面、リザルト画面は、スティックを右に入力すると次にすすみます
+  ゲーム中はひたすらスティックで自機を操作して弾を避け続けます
+  体力が0になるとゲームオーバーですs
+  ハイスコアを目指せ！
+
+*/
+
+
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -17,32 +46,41 @@ int stickX, stickY;                      // スティックの信号の生の値
 int8_t xStickState = 0, yStickState = 0; //-2のとき負方向大、-1のとき負方向小、0のとき中心、1のとき正方向小、2のとき正方向大
 
 #define DefaultCursorY 9 // 画面上のゲーム領域の上端のY座標()
+//
 
-//========設定========
-#define MaxBullets 16  // 弾の最大生成数
+//
+//========設定=====================================
+#define MaxBullets 24  // 弾の最大生成数
 #define MaxHealth 3    // 最大体力
 #define scoreketasuu 5 // スコア表示の桁数(オーバーすると後ろに被る)
+//=================================================
+//
 
+//
 // 周期処理のタイマー初期設定 (参考: https://qiita.com/Ninagawa123/items/f8585c5c711bcf065656)
 // https://qiita.com/Ninagawa123/items/f8585c5c711bcf065656
 const uint8_t frame_ms = 50; // 1フレームあたりの単位時間(ms)
 unsigned long sframe;        // フレーム管理時計の時刻 schaduledなflame数
 
 unsigned long frameCounter; // アニメーション用のフレーム数カウンター
+//
 
-//=====スコア関連===========
+//
+//=====スコア関連===================================
 uint32_t score = 0;
 uint32_t bestScore = 0;
 
 // スコアを加算する関数
 void addScore(int8_t value)
 {
-  if(score < 4294967295 - value) //オーバーフロー対策
-  score += value;
+  if (score < 4294967295 - value) // オーバーフロー対策
+    score += value;
 }
-//=========================
+//=================================================
+//
 
-//===ゲームの状態状態関連===
+//
+//===ゲームの状態状態関連==========================
 #define inTitle 0
 #define inGameStart 1
 #define inGameNow 2
@@ -50,9 +88,11 @@ void addScore(int8_t value)
 #define inResult 4
 
 uint8_t gameState = inTitle; // 起動時のGameStateを指定
-//=========================
+//=================================================
+//
 
-// 弾関連の変数・クラスなど
+//
+// 弾関連の変数・クラスなど=========================
 uint8_t bulletNumber = 0; // 弾番号のメモリを確保
 
 // 弾のクラス
@@ -79,7 +119,7 @@ private:
 
         if (gameState == inGameNow)
         { // ゲーム中にのみスコア加算
-          addScore(1);
+          addScore(10);
         }
       }
     }
@@ -132,10 +172,11 @@ public:
 // 弾のインスタンス化(メモリ確保のため)
 BulletClass bullet[MaxBullets];
 // 最大弾数分のメモリをコンピュータ起動時に確保する
+//=====================================================
+//
 
-//===========================================
-
-// プレイヤー関連=============================
+//
+// プレイヤー関連======================================
 class PlayerClass
 {
 private:
@@ -269,6 +310,7 @@ public:
       display.drawPixel(x, y + DefaultCursorY, WHITE); // バッファに書き込み
     }
   }
+
   // ゲームオーバー時のアニメーション
   //  gameStateがisGameEndのときに呼び出される
   void endAnimator()
@@ -308,8 +350,8 @@ public:
       // スコアが現在のベストコアより高ければベストスコアを更新
       if (score > bestScore)
       {
-        bestScore = score;          // ベストスコア更新
-        EEPROM.put(0x34,bestScore); // EEPROMにベストスコアを書き込み
+        bestScore = score;           // ベストスコア更新
+        EEPROM.put(0x34, bestScore); // EEPROMにベストスコアを書き込み
       }
     }
   }
@@ -317,9 +359,10 @@ public:
 
 // プレイヤーをインスタンス化(メモリの確保が目的)
 PlayerClass player;
+//===========================================================
+//
 
-// ==========================================================
-
+//
 // タイトル/リザルト画面の背景ビットマップ
 //  'background', 128x64px
 const unsigned char titlebgbackground[] PROGMEM = {
@@ -392,12 +435,15 @@ const unsigned char titlebgbackground[] PROGMEM = {
 const int titlebgallArray_LEN = 1;
 const unsigned char *titlebgallArray[1] = {
     titlebgbackground};
+//
 
+//
+// setup関数==============================================
 void setup()
 {
   display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
-  display.display(); // バッファの初期値（adafruitのロゴ）を表示
-  EEPROM.get(0x34,bestScore); // EEPROMからベストスコアを読み出してメモリに格納
+  display.display();           // バッファの初期値（adafruitのロゴ）を表示
+  EEPROM.get(0x34, bestScore); // EEPROMからベストスコアを読み出してメモリに格納
   delay(2000);
 
   // 乱数のシード設定
@@ -405,7 +451,11 @@ void setup()
   sframe = millis(); // 現在時刻を取得
   frameCounter = 20; // タイトル画面で1秒待つためのカウンタ
 }
+//======================================================
+//
 
+//
+// loop関数=============================================
 void loop()
 {
 
@@ -438,7 +488,10 @@ void loop()
   FrameTimer();      // 1フレーム分の時間が経過していなければこの関数内で処理が止まる
   display.display(); // バッファを画面に描画
 }
+//================================================================
+//
 
+//
 // ゲーム中の処理
 void inGameProcess()
 {
@@ -461,7 +514,9 @@ void gameStartProcess()
   player.start();        // プレイヤーの開始処理を実行
   gameState = inGameNow; // ゲームの状態をゲーム中に変更
 }
+//
 
+//
 // ゲーム終了時の処理
 void endGameProcess()
 {
@@ -473,7 +528,9 @@ void endGameProcess()
 
   player.endAnimator(); // プレイヤーの終了アニメーションを実行
 }
+//
 
+//
 // スコアボード表示の処理
 void inGameScoreBoard()
 {
@@ -488,7 +545,9 @@ void inGameScoreBoard()
   display.print((int)player.health);                                 // 体力表示
   display.drawLine(0, 8, 128, 8, WHITE);                             // スコアボードとゲーム領域の境界線をバッファに書き込み
 }
+//
 
+//
 // タイトル画面の処理
 void titleScreen()
 {
@@ -524,7 +583,9 @@ void titleScreen()
     display.print("-> PLAY"); // バッファに書き込み
   }
 }
+//
 
+//
 // リザルト画面の処理
 void resultScreen()
 {
@@ -560,7 +621,9 @@ void resultScreen()
     display.print("-> TITLE");
   }
 }
+//
 
+//
 // void loop()の処理が終わったとき、1フレーム分の時間が経過するまでこの関数内で処理が止まる
 void FrameTimer()
 {                                // 周期処理用に処理を遅延させるメソッド
@@ -579,7 +642,9 @@ void FrameTimer()
     sframe = curr;
   }
 }
+//
 
+//
 // スティックの状態を取得して変数に代入する処理
 void getStickStateXY()
 {
@@ -590,7 +655,9 @@ void getStickStateXY()
   xStickState = getStickState(stickX);
   yStickState = getStickState(stickY);
 }
+//
 
+//
 // // スティックの状態を(-2,-1,0,1,2)の5種類に分けて格納する関数
 int8_t getStickState(int value)
 {
@@ -609,7 +676,9 @@ int8_t getStickState(int value)
   }
   return tmpState; // 戻り値
 }
+//
 
+//
 // 弾生成
 void generateBullets()
 {
@@ -622,7 +691,9 @@ void generateBullets()
     }
   }
 }
+//
 
+//
 // スコアの桁数を返す関数
 int8_t keta(uint16_t tmpScore)
 {
