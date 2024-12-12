@@ -2,6 +2,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <stdio.h>
+#include <EEPROM.h>
 
 // Adafruit_SSD1306 display型変数の宣言
 #define SCREEN_WIDTH 128    // OLED display width, in pixels
@@ -307,7 +308,8 @@ public:
       // スコアが現在のベストコアより高ければベストスコアを更新
       if (score > bestScore)
       {
-        bestScore = score;
+        bestScore = score;          // ベストスコア更新
+        EEPROM.put(0x34,bestScore); // EEPROMにベストスコアを書き込み
       }
     }
   }
@@ -315,6 +317,8 @@ public:
 
 // プレイヤーをインスタンス化(メモリの確保が目的)
 PlayerClass player;
+
+// ==========================================================
 
 // タイトル/リザルト画面の背景ビットマップ
 //  'background', 128x64px
@@ -393,6 +397,7 @@ void setup()
 {
   display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
   display.display(); // バッファの初期値（adafruitのロゴ）を表示
+  EEPROM.get(0x34,bestScore); // EEPROMからベストスコアを読み出してメモリに格納
   delay(2000);
 
   // 乱数のシード設定
